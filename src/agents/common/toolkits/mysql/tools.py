@@ -1,4 +1,4 @@
-from typing import Annotated, Any
+﻿from typing import Annotated, Any
 
 from langchain.tools import tool
 from pydantic import BaseModel, Field
@@ -226,11 +226,9 @@ def mysql_query(
             return "timeout参数必须在1-600之间"
 
         conn_manager = get_connection_manager()
-        connection = conn_manager.get_connection()
-
         effective_timeout = timeout or 60
         try:
-            result = execute_query_with_timeout(connection, sql, timeout=effective_timeout)
+            result = execute_query_with_timeout(conn_manager, sql, timeout=effective_timeout)
         except QueryTimeoutError as timeout_error:
             logger.error(f"MySQL query timed out after {effective_timeout} seconds: {timeout_error}")
             raise
@@ -312,3 +310,4 @@ def mysql_query(
 def get_mysql_tools() -> list[Any]:
     """获取MySQL工具列表"""
     return [mysql_list_tables, mysql_describe_table, mysql_query]
+

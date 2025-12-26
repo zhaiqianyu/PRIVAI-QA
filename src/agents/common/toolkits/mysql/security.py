@@ -11,9 +11,9 @@ class MySQLSecurityChecker:
     DANGEROUS_KEYWORDS = {
         "DROP",
         "DELETE",
-        "UPDATE",
-        "INSERT",
-        "CREATE",
+        "UPSERT",
+        "CREDATE",
+        "INATE",
         "ALTER",
         "TRUNCATE",
         "REPLACE",

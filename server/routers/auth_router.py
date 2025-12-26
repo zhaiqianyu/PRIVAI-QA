@@ -31,14 +31,19 @@ class Token(BaseModel):
     avatar: str | None = None
     role: str
 
-
+#首次运行检查与初始化管理员
 class UserCreate(BaseModel):
     username: str
     password: str
     role: str = "user"
     phone_number: str | None = None
 
+class UserRegister(BaseModel):
+    username: str
+    password: str
+    phone_number: str | None = None
 
+#获取/修改个人信息（/me、/profile）
 class UserUpdate(BaseModel):
     username: str | None = None
     password: str | None = None
@@ -182,6 +187,47 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 async def check_first_run():
     is_first_run = await db_manager.async_check_first_run()
     return {"first_run": is_first_run}
+
+
+@auth.post("/register", response_model=UserResponse)
+async def register_user(user_data: UserRegister, request: Request, db: AsyncSession = Depends(get_db)):
+    is_valid, error_msg = validate_username(user_data.username)
+    if not is_valid:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
+
+    if user_data.phone_number and not is_valid_phone_number(user_data.phone_number):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="手机号格式不正确")
+
+    result = await db.execute(select(User).filter(User.username == user_data.username))
+    existing_user = result.scalar_one_or_none()
+    if existing_user:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="用户名已存在")
+
+    if user_data.phone_number:
+        result = await db.execute(select(User).filter(User.phone_number == user_data.phone_number))
+        existing_phone = result.scalar_one_or_none()
+        if existing_phone:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="手机号已存在")
+
+    result = await db.execute(select(User.user_id))
+    existing_user_ids = [user_id for (user_id,) in result.all()]
+    user_id = generate_unique_user_id(user_data.username, existing_user_ids)
+
+    new_user = User(
+        username=user_data.username,
+        user_id=user_id,
+        phone_number=user_data.phone_number,
+        password_hash=AuthUtils.hash_password(user_data.password),
+        role="user",
+    )
+
+    db.add(new_user)
+    await db.commit()
+    await db.refresh(new_user)
+
+    await log_operation(db, new_user.id, "用户注册", f"用户注册: {new_user.username}", request)
+
+    return new_user.to_dict()
 
 
 # 路由：初始化管理员账户

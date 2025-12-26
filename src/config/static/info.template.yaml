@@ -3,16 +3,16 @@
 
 # 组织信息
 organization:
-  name: "江南语析"           # 完整组织名称
-  logo: "/favicon.svg"       # Logo文件路径（放在 web/public 目录下）
-  avatar: "/avatar.jpg"      # 头像文件路径（放在 web/public 目录下）
+  name: "PRIVAI QA"           # 完整组织名称
+  logo: "/logo.png"          # Logo文件路径（放在 web/public 目录下）
+  avatar: "/logo.png"        # 头像文件路径（放在 web/public 目录下）
   login_bg: "/login-bg.jpg"  # 登录背景图片路径（放在 web/public 目录下）
 
 # 项目信息
 branding:
-  name: "Yuxi-Know"
-  title: "Yuxi-Know: 更智能的知识库智能体平台"     # 系统标题
-  subtitle: "大模型驱动的知识库智能体平台"          # 副标题
+  name: "PRIVAI QA"
+  title: "PRIVAI QA"     # 系统标题
+  subtitle: "企业私有化数据智能问答系统"  # 副标题
 
 features:
   - label: "GitHub Stars"

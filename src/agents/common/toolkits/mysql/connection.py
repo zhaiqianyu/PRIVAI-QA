@@ -1,4 +1,4 @@
-import concurrent.futures
+﻿import concurrent.futures
 import threading
 import time
 from contextlib import contextmanager
@@ -16,40 +16,54 @@ class MySQLConnectionManager:
 
     def __init__(self, config: dict[str, Any]):
         self.config = config
-        self.connection = None
+        self._local = threading.local()
         self._lock = threading.Lock()
-        self.last_connection_time = 0
         self.max_connection_age = 3600  # 1小时后重新连接
+
+    def _get_local_connection(self) -> pymysql.Connection | None:
+        return getattr(self._local, "connection", None)
+
+    def _set_local_connection(self, connection: pymysql.Connection | None) -> None:
+        self._local.connection = connection
+
+    def _get_local_last_time(self) -> float:
+        return float(getattr(self._local, "last_connection_time", 0.0) or 0.0)
+
+    def _set_local_last_time(self, last_time: float) -> None:
+        self._local.last_connection_time = last_time
 
     def _get_connection(self) -> pymysql.Connection:
         """获取数据库连接"""
         current_time = time.time()
+        connection = self._get_local_connection()
+        last_connection_time = self._get_local_last_time()
 
-        # 检查连接是否过期或断开
         if (
-            self.connection is None
-            or not self.connection.open
-            or current_time - self.last_connection_time > self.max_connection_age
+            connection is None
+            or not connection.open
+            or current_time - last_connection_time > self.max_connection_age
         ):
             with self._lock:
-                # 双重检查
+                # double-check inside lock
+                connection = self._get_local_connection()
+                last_connection_time = self._get_local_last_time()
+
                 if (
-                    self.connection is None
-                    or not self.connection.open
-                    or current_time - self.last_connection_time > self.max_connection_age
+                    connection is None
+                    or not connection.open
+                    or current_time - last_connection_time > self.max_connection_age
                 ):
-                    # 关闭旧连接
-                    if self.connection and self.connection.open:
+                    if connection and connection.open:
                         try:
-                            self.connection.close()
-                        except Exception as _:
+                            connection.close()
+                        except Exception:
                             pass
 
-                    # 创建新连接
-                    self.connection = self._create_connection()
-                    self.last_connection_time = current_time
+                    connection = self._create_connection()
+                    self._set_local_connection(connection)
+                    self._set_local_last_time(current_time)
 
-        return self.connection
+        return connection
 
     def _create_connection(self) -> pymysql.Connection:
         """创建新的数据库连接"""
@@ -65,9 +79,9 @@ class MySQLConnectionManager:
                     charset=self.config.get("charset", "utf8mb4"),
                     cursorclass=DictCursor,
                     connect_timeout=10,
-                    read_timeout=60,  # 增加读取超时
+                    read_timeout=60,
                     write_timeout=30,
-                    autocommit=True,  # 自动提交
+                    autocommit=True,
                 )
                 logger.info(f"MySQL connection established successfully (attempt {attempt + 1})")
                 return connection
@@ -75,7 +89,7 @@ class MySQLConnectionManager:
             except MySQLError as e:
                 logger.warning(f"Connection attempt {attempt + 1} failed: {e}")
                 if attempt < max_retries - 1:
-                    time.sleep(2**attempt)  # 指数退避
+                    time.sleep(2**attempt)
                 else:
                     logger.error(f"Failed to connect to MySQL after {max_retries} attempts: {e}")
                     raise ConnectionError(f"MySQL connection failed: {e}")
@@ -83,13 +97,13 @@ class MySQLConnectionManager:
     def test_connection(self) -> bool:
         """测试连接是否有效"""
         try:
-            if self.connection and self.connection.open:
-                # 执行简单查询测试连接
-                with self.connection.cursor() as cursor:
+            connection = self._get_local_connection()
+            if connection and connection.open:
+                with connection.cursor() as cursor:
                     cursor.execute("SELECT 1")
                     cursor.fetchone()
                 return True
-        except Exception as _:
+        except Exception:
             pass
         return False
 
@@ -101,7 +115,10 @@ class MySQLConnectionManager:
         except Exception:
             pass
         finally:
-            self.connection = None
+            local_connection = self._get_local_connection()
+            if connection is None or local_connection is connection:
+                self._set_local_connection(None)
+                self._set_local_last_time(0.0)
 
     @contextmanager
     def get_cursor(self):
@@ -111,7 +128,6 @@ class MySQLConnectionManager:
         connection = None
         last_error: Exception | None = None
 
-        # 优先确保成功获取游标再交给调用方执行查询
         for attempt in range(max_retries):
             try:
                 connection = self._get_connection()
@@ -124,7 +140,7 @@ class MySQLConnectionManager:
                 cursor = None
                 connection = None
                 if attempt == max_retries - 1:
-                    raise e
+                    raise
                 time.sleep(1)
 
         if cursor is None or connection is None:
@@ -139,7 +155,6 @@ class MySQLConnectionManager:
             except Exception:
                 pass
 
-            # 标记连接失效，等待下一次获取时重建
             if "MySQL" in str(e) or "connection" in str(e).lower():
                 logger.warning(f"MySQL connection error encountered, invalidating connection: {e}")
                 self._invalidate_connection(connection)
@@ -154,9 +169,13 @@ class MySQLConnectionManager:
 
     def close(self):
         """关闭数据库连接"""
-        if self.connection:
-            self.connection.close()
-            self.connection = None
+        connection = self._get_local_connection()
+        if connection:
+            try:
+                connection.close()
+            finally:
+                self._set_local_connection(None)
+                self._set_local_last_time(0.0)
             logger.info("MySQL connection closed")
 
     def get_connection(self) -> pymysql.Connection:
@@ -165,7 +184,7 @@ class MySQLConnectionManager:
 
     def invalidate_connection(self):
         """手动标记连接失效"""
-        self._invalidate_connection(self.connection)
+        self._invalidate_connection(self._get_local_connection())
 
     @property
     def database_name(self) -> str:
@@ -176,38 +195,45 @@ class MySQLConnectionManager:
 class QueryTimeoutError(Exception):
     """查询超时异常"""
 
-    pass
-
 
 class QueryResultTooLargeError(Exception):
     """查询结果过大异常"""
 
-    pass
 
+def execute_query_with_timeout(
+    conn_manager: MySQLConnectionManager,
+    sql: str,
+    params: tuple | None = None,
+    timeout: int = 10,
+):
+    """使用线程池实现超时控制，避免信号导致的生成器问题。
 
-def execute_query_with_timeout(connection: pymysql.Connection, sql: str, params: tuple = None, timeout: int = 10):
-    """使用线程池实现超时控制，避免信号导致的生成器问题"""
+    注意：不要在不同线程复用同一个 PyMySQL 连接，否则可能出现
+    "Packet sequence number wrong" / "read from closed file" 等错误。
+    """
 
     def query_worker():
-        """查询工作函数，在单独线程中执行"""
+        connection = conn_manager.get_connection()
         cursor = connection.cursor(DictCursor)
         try:
             if params is None:
                 cursor.execute(sql)
             else:
                 cursor.execute(sql, params)
-            result = cursor.fetchall()
-            return result
+            return cursor.fetchall()
         finally:
-            cursor.close()
+            try:
+                cursor.close()
+            except Exception:
+                pass
+            # 线程池线程生命周期不固定，避免遗留连接
+            conn_manager._invalidate_connection(connection)
 
-    # 使用线程池执行查询，设置超时
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(query_worker)
         try:
             return future.result(timeout=timeout)
         except concurrent.futures.TimeoutError:
-            # 尝试取消任务
             future.cancel()
             raise QueryTimeoutError(f"Query timeout after {timeout} seconds")
 
@@ -217,10 +243,8 @@ def limit_result_size(result: list, max_chars: int = 10000) -> list:
     if not result:
         return result
 
-    # 计算结果的字符大小
     result_str = str(result)
     if len(result_str) > max_chars:
-        # 返回部分结果并提示
         limited_result = []
         current_chars = 0
         for row in result:
@@ -230,8 +254,9 @@ def limit_result_size(result: list, max_chars: int = 10000) -> list:
             limited_result.append(row)
             current_chars += len(row_str)
 
-        # 记录警告
-        logger.warning(f"Query result truncated from {len(result)} to {len(limited_result)} rows due to size limit")
+        logger.warning(
+            f"Query result truncated from {len(result)} to {len(limited_result)} rows due to size limit"
+        )
         return limited_result
 
     return result

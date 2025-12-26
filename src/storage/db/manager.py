@@ -3,6 +3,7 @@ import json
 import os
 import pathlib
 from contextlib import asynccontextmanager, contextmanager
+from urllib.parse import quote_plus
 
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -30,13 +31,31 @@ class DBManager(metaclass=SingletonMeta):
     """数据库管理器 - 提供异步数据库连接和会话管理"""
 
     def __init__(self):
-        self.db_path = os.path.join(config.save_dir, "database", "server.db")
-        self.ensure_db_dir()
+        self.db_backend = (os.getenv("APP_DB_DIALECT") or "sqlite").strip().lower()
+        self.db_path: str | None = None
+
+        if self.db_backend == "mysql":
+            host = (os.getenv("APP_DB_HOST") or os.getenv("MYSQL_HOST") or "127.0.0.1").strip()
+            port = int((os.getenv("APP_DB_PORT") or os.getenv("MYSQL_PORT") or "3306").strip())
+            user = (os.getenv("APP_DB_USER") or os.getenv("MYSQL_USER") or "root").strip()
+            password = os.getenv("APP_DB_PASSWORD") or os.getenv("MYSQL_PASSWORD") or ""
+            database = (os.getenv("APP_DB_NAME") or os.getenv("MYSQL_DATABASE") or "yuxiknow").strip()
+
+            user_q = quote_plus(user)
+            password_q = quote_plus(password)
+            async_url = f"mysql+asyncmy://{user_q}:{password_q}@{host}:{port}/{database}?charset=utf8mb4"
+            sync_url = f"mysql+pymysql://{user_q}:{password_q}@{host}:{port}/{database}?charset=utf8mb4"
+        else:
+            self.db_backend = "sqlite"
+            self.db_path = os.path.join(config.save_dir, "database", "server.db")
+            self.ensure_db_dir()
+            async_url = f"sqlite+aiosqlite:///{self.db_path}"
+            sync_url = f"sqlite:///{self.db_path}"
 
         # 创建异步SQLAlchemy引擎，配置JSON序列化器以支持中文
         # 使用 ensure_ascii=False 确保中文字符不被转义为 Unicode 序列
         self.async_engine = create_async_engine(
-            f"sqlite+aiosqlite:///{self.db_path}",
+            async_url,
             json_serializer=lambda obj: json.dumps(obj, ensure_ascii=False),
             json_deserializer=json.loads,
         )
@@ -46,7 +65,7 @@ class DBManager(metaclass=SingletonMeta):
 
         # 保留同步引擎用于迁移等特殊操作
         self.engine = create_engine(
-            f"sqlite:///{self.db_path}",
+            sync_url,
             json_serializer=lambda obj: json.dumps(obj, ensure_ascii=False),
             json_deserializer=json.loads,
         )
@@ -60,6 +79,8 @@ class DBManager(metaclass=SingletonMeta):
 
     def ensure_db_dir(self):
         """确保数据库目录存在"""
+        if not self.db_path:
+            return
         db_dir = os.path.dirname(self.db_path)
         pathlib.Path(db_dir).mkdir(parents=True, exist_ok=True)
 
@@ -71,6 +92,13 @@ class DBManager(metaclass=SingletonMeta):
 
     def run_migrations(self):
         """运行数据库迁移"""
+        if self.db_backend != "sqlite":
+            logger.info(f"DB backend is '{self.db_backend}', skipping SQLite migrations")
+            return
+
+        if not self.db_path:
+            return
+
         if not os.path.exists(self.db_path):
             return
 

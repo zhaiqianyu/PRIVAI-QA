@@ -1,4 +1,4 @@
-services:
+﻿services:
   api:
     build:
       context: .
@@ -16,7 +16,7 @@ services:
       - ./test:/app/test
       - ./scripts:/app/scripts
       - ./.env:/app/.env
-      - ${MODEL_DIR:-./models}:/models  # 使用默认值处理未定义的环境变量
+      - ${MODEL_DIR:-./models}:/models  # 浣跨敤榛樿鍊煎鐞嗘湭瀹氫箟鐨勭幆澧冨彉閲?
     ports:
       - "5050:5050"
     networks:
@@ -92,7 +92,7 @@ services:
       - ./docker/volumes/neo4j/data:/data
       - ./docker/volumes/neo4j/logs:/var/lib/neo4j/logs
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:7474 || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
       interval: 20s
       timeout: 10s
       retries: 5
@@ -275,3 +275,4 @@ services:
 networks:
   app-network:
     driver: bridge
+

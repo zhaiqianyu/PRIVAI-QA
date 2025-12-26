@@ -25,7 +25,7 @@ class GraphDatabase:
         self.files = []
         self.status = "closed"
         self.kgdb_name = "neo4j"
-        self.embed_model_name = os.getenv("GRAPH_EMBED_MODEL_NAME") or "siliconflow/BAAI/bge-m3"
+        self.embed_model_name = os.getenv("GRAPH_EMBED_MODEL_NAME") or config.embed_model
         self.embed_model = select_embedding_model(self.embed_model_name)
         self.work_dir = os.path.join(config.save_dir, "knowledge_graph", self.kgdb_name)
         os.makedirs(self.work_dir, exist_ok=True)
@@ -355,15 +355,15 @@ class GraphDatabase:
         # 判断模型名称是否匹配
         self.embed_model_name = self.embed_model_name or config.embed_model
         cur_embed_info = config.embed_model_names.get(self.embed_model_name)
-        logger.warning(f"embed_model_name={self.embed_model_name}, {cur_embed_info=}")
-        assert self.embed_model_name == config.embed_model or self.embed_model_name is None, (
-            f"embed_model_name={self.embed_model_name}, {config.embed_model=}"
-        )
+        if cur_embed_info is None:
+            raise ValueError(f"Unknown embed_model_name={self.embed_model_name}")
+        self.embed_model = select_embedding_model(self.embed_model_name)
+        logger.info(f"Using embed_model_name={self.embed_model_name}, {cur_embed_info=}")
 
         with self.driver.session() as session:
             logger.info(f"Adding entity to {kgdb_name}")
             session.execute_write(_create_graph, triples)
-            logger.info(f"Creating vector index for {kgdb_name} with {config.embed_model}")
+            logger.info(f"Creating vector index for {kgdb_name} with {self.embed_model_name}")
             session.execute_write(_create_vector_index, getattr(cur_embed_info, "dimension", 1024))
 
             # 收集所有需要处理的实体名称，去重
@@ -883,6 +883,7 @@ class GraphDatabase:
             # 更新对象属性
             if graph_info.get("embed_model_name"):
                 self.embed_model_name = graph_info["embed_model_name"]
+                self.embed_model = select_embedding_model(self.embed_model_name)
 
             # 如果需要，可以加载更多信息
             # 注意：这里不更新self.kgdb_name，因为它是在初始化时设置的

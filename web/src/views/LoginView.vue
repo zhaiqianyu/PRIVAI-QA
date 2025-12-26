@@ -118,7 +118,14 @@
 
             <!-- 登录表单 -->
             <div v-else class="login-form">
+              <div class="auth-mode-switch">
+                <a-radio-group v-model:value="authMode" button-style="solid">
+                  <a-radio-button value="login">登录</a-radio-button>
+                  <a-radio-button value="register">注册</a-radio-button>
+                </a-radio-group>
+              </div>
               <a-form
+                v-if="authMode === 'login'"
                 :model="loginForm"
                 @finish="handleLogin"
                 layout="vertical"
@@ -191,6 +198,44 @@
                   </div>
                 </div>
               </a-form>
+
+              <a-form v-else :model="registerForm" @finish="handleRegister" layout="vertical">
+                <a-form-item label="用户名" name="username" :rules="[{ required: true, message: '请输入用户名' }]">
+                  <a-input v-model:value="registerForm.username" placeholder="2-20字符，支持中文/字母/数字/下划线">
+                    <template #prefix>
+                      <user-outlined />
+                    </template>
+                  </a-input>
+                </a-form-item>
+
+                <a-form-item label="手机号（可选）" name="phone_number">
+                  <a-input v-model:value="registerForm.phone_number" placeholder="可用于登录" />
+                </a-form-item>
+
+                <a-form-item label="密码" name="password" :rules="[{ required: true, message: '请输入密码' }]">
+                  <a-input-password v-model:value="registerForm.password">
+                    <template #prefix>
+                      <lock-outlined />
+                    </template>
+                  </a-input-password>
+                </a-form-item>
+
+                <a-form-item
+                  label="确认密码"
+                  name="confirmPassword"
+                  :rules="[{ required: true, message: '请确认密码' }, { validator: validateRegisterConfirmPassword }]"
+                >
+                  <a-input-password v-model:value="registerForm.confirmPassword">
+                    <template #prefix>
+                      <lock-outlined />
+                    </template>
+                  </a-input-password>
+                </a-form-item>
+
+                <a-form-item>
+                  <a-button type="primary" html-type="submit" :loading="loading" block>注册</a-button>
+                </a-form-item>
+              </a-form>
             </div>
 
             <!-- 错误提示 -->
@@ -219,6 +264,7 @@ import { useInfoStore } from '@/stores/info';
 import { useAgentStore } from '@/stores/agent';
 import { message } from 'ant-design-vue';
 import { healthApi } from '@/apis/system_api';
+import { authApi } from '@/apis/auth_api';
 import { UserOutlined, LockOutlined, WechatOutlined, QrcodeOutlined, ThunderboltOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue';
 const router = useRouter();
 const userStore = useUserStore();
@@ -232,7 +278,7 @@ const loginBgImage = computed(() => {
 const brandName = computed(() => {
   const rawName = infoStore.branding?.name ?? '';
   const trimmed = rawName.trim();
-  return trimmed || 'Yuxi-Know';
+  return trimmed || 'PRIVAI QA';
 });
 const brandSubtitle = computed(() => {
   const rawSubtitle = infoStore.branding?.subtitle ?? '';
@@ -253,6 +299,7 @@ const rememberMe = ref(false);
 const serverStatus = ref('loading');
 const serverError = ref('');
 const healthChecking = ref(false);
+const authMode = ref('login');
 
 // 登录锁定相关状态
 const isLocked = ref(false);
@@ -263,6 +310,13 @@ const lockCountdown = ref(null);
 const loginForm = reactive({
   loginId: '', // 支持user_id或phone_number登录
   password: ''
+});
+
+const registerForm = reactive({
+  username: '',
+  phone_number: '',
+  password: '',
+  confirmPassword: ''
 });
 
 // 管理员初始化表单
@@ -279,7 +333,7 @@ const showDevMessage = () => {
 };
 
 const goHome = () => {
-  router.push('/');
+  router.push('/login');
 };
 
 // 清理倒计时器
@@ -335,6 +389,15 @@ const validateConfirmPassword = async (rule, value) => {
   }
 };
 
+const validateRegisterConfirmPassword = async (rule, value) => {
+  if (value === '') {
+    throw new Error('请确认密码');
+  }
+  if (value !== registerForm.password) {
+    throw new Error('两次输入的密码不一致');
+  }
+};
+
 // 处理登录
 const handleLogin = async () => {
   // 如果当前被锁定，不允许登录
@@ -356,7 +419,7 @@ const handleLogin = async () => {
     message.success('登录成功');
 
     // 获取重定向路径
-    const redirectPath = sessionStorage.getItem('redirect') || '/';
+    const redirectPath = sessionStorage.getItem('redirect') || '/agent';
     sessionStorage.removeItem('redirect'); // 清除重定向信息
 
     // 根据用户角色决定重定向目标
@@ -386,11 +449,11 @@ const handleLogin = async () => {
           return;
         }
 
-        // 没有可用智能体，回退到首页
-        router.push('/');
+        // 没有可用智能体，回退到 /agent
+        router.push('/agent');
       } catch (error) {
         console.error('获取智能体信息失败:', error);
-        router.push('/');
+        router.push('/agent');
       }
     } else {
       // 跳转到其他预设的路径
@@ -432,6 +495,40 @@ const handleLogin = async () => {
   }
 };
 
+// 处理注册
+const handleRegister = async () => {
+  try {
+    loading.value = true;
+    errorMessage.value = '';
+
+    if (registerForm.password !== registerForm.confirmPassword) {
+      errorMessage.value = '两次输入的密码不一致';
+      return;
+    }
+
+    const result = await authApi.register({
+      username: registerForm.username,
+      password: registerForm.password,
+      phone_number: registerForm.phone_number || null
+    });
+
+    message.success('注册成功，请登录');
+    authMode.value = 'login';
+    loginForm.loginId = result.user_id || '';
+    loginForm.password = '';
+
+    registerForm.username = '';
+    registerForm.phone_number = '';
+    registerForm.password = '';
+    registerForm.confirmPassword = '';
+  } catch (error) {
+    console.error('注册失败:', error);
+    errorMessage.value = error.message || '注册失败，请稍后重试';
+  } finally {
+    loading.value = false;
+  }
+};
+
 // 处理初始化管理员
 const handleInitialize = async () => {
   try {
@@ -450,7 +547,7 @@ const handleInitialize = async () => {
     });
 
     message.success('管理员账户创建成功');
-    router.push('/');
+    router.push('/agent');
   } catch (error) {
     console.error('初始化失败:', error);
     errorMessage.value = error.message || '初始化失败，请重试';
@@ -497,7 +594,16 @@ const checkServerHealth = async () => {
 onMounted(async () => {
   // 如果已登录，跳转到首页
   if (userStore.isLoggedIn) {
-    router.push('/');
+    if (!agentStore.isInitialized) {
+      await agentStore.initialize();
+    }
+    if (userStore.isAdmin) {
+      router.push('/agent');
+    } else if (agentStore.defaultAgentId) {
+      router.push(`/agent/${agentStore.defaultAgentId}`);
+    } else {
+      router.push('/agent');
+    }
     return;
   }
 
@@ -543,6 +649,12 @@ onUnmounted(() => {
     color: var(--main-color);
     background-color: transparent;
   }
+}
+
+.auth-mode-switch {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
 }
 
 .login-layout {

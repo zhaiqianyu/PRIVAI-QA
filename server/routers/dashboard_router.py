@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import String, cast, distinct, func, or_, select
+from sqlalchemy import String, cast, distinct, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.routers.auth_router import get_admin_user
@@ -21,6 +21,36 @@ from src.utils.logging_config import logger
 
 
 dashboard = APIRouter(prefix="/dashboard", tags=["Dashboard"])
+
+
+def _get_db_dialect(db: AsyncSession) -> str:
+    try:
+        bind = db.get_bind()
+        if bind is None:
+            return "unknown"
+        return bind.dialect.name
+    except Exception:
+        return "unknown"
+
+
+def _shift_to_shanghai(col, dialect: str):
+    if dialect == "mysql":
+        return func.date_add(col, text("INTERVAL 8 HOUR"))
+    return func.datetime(col, "+8 hours")
+
+
+def _time_bucket(col, *, dialect: str, time_range: str):
+    shifted = _shift_to_shanghai(col, dialect)
+    if time_range == "14hours":
+        fmt = "%Y-%m-%d %H:00"
+    elif time_range == "14weeks":
+        fmt = "%Y-%W" if dialect != "mysql" else "%Y-%u"
+    else:
+        fmt = "%Y-%m-%d"
+
+    if dialect == "mysql":
+        return func.date_format(shifted, fmt)
+    return func.strftime(fmt, shifted)
 
 
 # =============================================================================
@@ -234,13 +264,21 @@ async def get_user_activity_stats(
         from src.storage.db.models import User, Conversation
 
         now = utc_now()
+        dialect = _get_db_dialect(db)
 
         # Conversations may store either the numeric user primary key or the login user_id string.
         # Join condition accounts for both representations.
-        user_join_condition = or_(
-            Conversation.user_id == User.user_id,
-            Conversation.user_id == cast(User.id, String),
-        )
+        if dialect == "mysql":
+            coll = "utf8mb4_unicode_ci"
+            conv_uid = Conversation.user_id.collate(coll)
+            user_uid = User.user_id.collate(coll)
+            user_id_str = cast(User.id, String).collate(coll)
+            user_join_condition = or_(conv_uid == user_uid, conv_uid == user_id_str)
+        else:
+            user_join_condition = or_(
+                Conversation.user_id == User.user_id,
+                Conversation.user_id == cast(User.id, String),
+            )
 
         # 基础用户统计（排除已删除用户）
         total_users_result = await db.execute(select(func.count(User.id)).filter(User.is_deleted == 0))
@@ -760,12 +798,13 @@ async def get_call_timeseries_stats(
         # 计算时间范围（使用北京时间 UTC+8）
         now = utc_now()
         local_now = shanghai_now()
+        dialect = _get_db_dialect(db)
 
         if time_range == "14hours":
             intervals = 14
             # 包含当前小时：从13小时前开始
             start_time = now - timedelta(hours=intervals - 1)
-            group_format = func.strftime("%Y-%m-%d %H:00", func.datetime(Message.created_at, "+8 hours"))
+            group_format = _time_bucket(Message.created_at, dialect=dialect, time_range=time_range)
             base_local_time = ensure_shanghai(start_time)
         elif time_range == "14weeks":
             intervals = 14
@@ -774,13 +813,13 @@ async def get_call_timeseries_stats(
             local_start = local_start - timedelta(days=local_start.weekday())
             local_start = local_start.replace(hour=0, minute=0, second=0, microsecond=0)
             start_time = local_start.astimezone(UTC)
-            group_format = func.strftime("%Y-%W", func.datetime(Message.created_at, "+8 hours"))
+            group_format = _time_bucket(Message.created_at, dialect=dialect, time_range=time_range)
             base_local_time = local_start
         else:  # 14days (default)
             intervals = 14
             # 包含当前天：从13天前开始
             start_time = now - timedelta(days=intervals - 1)
-            group_format = func.strftime("%Y-%m-%d", func.datetime(Message.created_at, "+8 hours"))
+            group_format = _time_bucket(Message.created_at, dialect=dialect, time_range=time_range)
             base_local_time = ensure_shanghai(start_time)
 
         # 根据类型查询数据
@@ -803,11 +842,11 @@ async def get_call_timeseries_stats(
             # 智能体调用统计（基于对话更新时间，按智能体分组）
             # 为对话创建独立的时间格式化器
             if time_range == "14hours":
-                conv_group_format = func.strftime("%Y-%m-%d %H:00", func.datetime(Conversation.updated_at, "+8 hours"))
+                conv_group_format = _time_bucket(Conversation.updated_at, dialect=dialect, time_range=time_range)
             elif time_range == "14weeks":
-                conv_group_format = func.strftime("%Y-%W", func.datetime(Conversation.updated_at, "+8 hours"))
+                conv_group_format = _time_bucket(Conversation.updated_at, dialect=dialect, time_range=time_range)
             else:  # 14days
-                conv_group_format = func.strftime("%Y-%m-%d", func.datetime(Conversation.updated_at, "+8 hours"))
+                conv_group_format = _time_bucket(Conversation.updated_at, dialect=dialect, time_range=time_range)
 
             query_result = await db.execute(
                 select(
@@ -871,11 +910,11 @@ async def get_call_timeseries_stats(
             # 工具调用统计（按工具名称分组）
             # 为工具调用创建独立的时间格式化器
             if time_range == "14hours":
-                tool_group_format = func.strftime("%Y-%m-%d %H:00", func.datetime(ToolCall.created_at, "+8 hours"))
+                tool_group_format = _time_bucket(ToolCall.created_at, dialect=dialect, time_range=time_range)
             elif time_range == "14weeks":
-                tool_group_format = func.strftime("%Y-%W", func.datetime(ToolCall.created_at, "+8 hours"))
+                tool_group_format = _time_bucket(ToolCall.created_at, dialect=dialect, time_range=time_range)
             else:  # 14days
-                tool_group_format = func.strftime("%Y-%m-%d", func.datetime(ToolCall.created_at, "+8 hours"))
+                tool_group_format = _time_bucket(ToolCall.created_at, dialect=dialect, time_range=time_range)
 
             query_result = await db.execute(
                 select(

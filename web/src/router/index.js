@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import AppLayout from '@/layouts/AppLayout.vue';
-import BlankLayout from '@/layouts/BlankLayout.vue';
 import { useUserStore } from '@/stores/user';
 import { useAgentStore } from '@/stores/agent';
 
@@ -9,16 +8,7 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      name: 'main',
-      component: BlankLayout,
-      children: [
-        {
-          path: '',
-          name: 'Home',
-          component: () => import('../views/HomeView.vue'),
-          meta: { keepAlive: true, requiresAuth: false }
-        }
-      ]
+      redirect: '/login'
     },
     {
       path: '/login',
@@ -149,7 +139,27 @@ router.beforeEach(async (to, from, next) => {
 
   // 如果用户已登录但访问登录页
   if (to.path === '/login' && isLoggedIn) {
-    next('/');
+    try {
+      const agentStore = useAgentStore();
+      if (!agentStore.isInitialized) {
+        await agentStore.initialize();
+      }
+
+      if (isAdmin) {
+        next('/agent');
+        return;
+      }
+
+      const defaultAgent = agentStore.defaultAgent;
+      if (defaultAgent && defaultAgent.id) {
+        next(`/agent/${defaultAgent.id}`);
+      } else {
+        next('/agent');
+      }
+    } catch (error) {
+      console.error('获取智能体信息失败:', error);
+      next('/agent');
+    }
     return;
   }
 

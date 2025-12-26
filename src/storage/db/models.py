@@ -189,12 +189,12 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    username = Column(String, nullable=False, unique=True, index=True)  # 显示名称，2-20字符
-    user_id = Column(String, nullable=False, unique=True, index=True)  # 登录ID，根据用户名生成
-    phone_number = Column(String, nullable=True, unique=True, index=True)  # 手机号，可选登录方式
-    avatar = Column(String, nullable=True)  # 头像URL
-    password_hash = Column(String, nullable=False)
-    role = Column(String, nullable=False, default="user")  # 角色: superadmin, admin, user
+    username = Column(String(50), nullable=False, unique=True, index=True)  # 显示名称，2-20字符
+    user_id = Column(String(64), nullable=False, unique=True, index=True)  # 登录ID，根据用户名生成
+    phone_number = Column(String(20), nullable=True, unique=True, index=True)  # 手机号，可选登录方式
+    avatar = Column(String(512), nullable=True)  # 头像URL
+    password_hash = Column(String(255), nullable=False)
+    role = Column(String(20), nullable=False, default="user")  # 角色: superadmin, admin, user
     created_at = Column(DateTime, default=utc_now)
     last_login = Column(DateTime, nullable=True)
 
@@ -289,9 +289,9 @@ class OperationLog(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    operation = Column(String, nullable=False)
+    operation = Column(String(100), nullable=False)
     details = Column(Text, nullable=True)
-    ip_address = Column(String, nullable=True)
+    ip_address = Column(String(45), nullable=True)
     timestamp = Column(DateTime, default=utc_now)
 
     # 关联用户
