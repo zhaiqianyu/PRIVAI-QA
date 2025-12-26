@@ -1,4 +1,4 @@
-﻿import concurrent.futures
+import concurrent.futures
 import threading
 import time
 from contextlib import contextmanager
@@ -38,11 +38,7 @@ class MySQLConnectionManager:
         connection = self._get_local_connection()
         last_connection_time = self._get_local_last_time()
 
-        if (
-            connection is None
-            or not connection.open
-            or current_time - last_connection_time > self.max_connection_age
-        ):
+        if connection is None or not connection.open or current_time - last_connection_time > self.max_connection_age:
             with self._lock:
                 # double-check inside lock
                 connection = self._get_local_connection()
@@ -254,9 +250,7 @@ def limit_result_size(result: list, max_chars: int = 10000) -> list:
             limited_result.append(row)
             current_chars += len(row_str)
 
-        logger.warning(
-            f"Query result truncated from {len(result)} to {len(limited_result)} rows due to size limit"
-        )
+        logger.warning(f"Query result truncated from {len(result)} to {len(limited_result)} rows due to size limit")
         return limited_result
 
     return result

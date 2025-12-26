@@ -12,7 +12,6 @@ import asyncio
 import os
 import random
 import string
-import sys
 from dataclasses import dataclass
 
 import httpx
@@ -63,7 +62,9 @@ async def main() -> int:
 
     parser = argparse.ArgumentParser(description="Smoke test the /api/auth/register flow against a running API.")
     parser.add_argument("--base-url", default=os.getenv("TEST_BASE_URL", "http://localhost:5050").rstrip("/"))
-    parser.add_argument("--no-cleanup", action="store_true", help="Do not delete the created user (requires admin creds).")
+    parser.add_argument(
+        "--no-cleanup", action="store_true", help="Do not delete the created user (requires admin creds)."
+    )
     args = parser.parse_args()
 
     async with httpx.AsyncClient(base_url=args.base_url, timeout=30.0, follow_redirects=True) as client:
@@ -132,7 +133,9 @@ async def main() -> int:
 
         if not args.no_cleanup and admin_auth:
             print("[8] cleanup: delete created user")
-            delete_response = await client.delete(f"/api/auth/users/{registered_user['id']}", headers=admin_auth.headers)
+            delete_response = await client.delete(
+                f"/api/auth/users/{registered_user['id']}", headers=admin_auth.headers
+            )
             _assert_status(delete_response, 200)
 
         print("OK: registration flow looks good.")
@@ -141,4 +144,3 @@ async def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(asyncio.run(main()))
-

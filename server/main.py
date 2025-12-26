@@ -16,7 +16,7 @@ from server.utils.access_log_middleware import AccessLogMiddleware
 
 # 设置日志配置
 setup_logging()
-#时间窗限流：60 秒内最多允许 10 次
+# 时间窗限流：60 秒内最多允许 10 次
 RATE_LIMIT_MAX_ATTEMPTS = 10
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_ENDPOINTS = {("/api/auth/token", "POST")}
@@ -47,7 +47,7 @@ def _extract_client_ip(request: Request) -> str:
     return "unknown"
 
 
-class LoginRateLimitMiddleware(BaseHTTPMiddleware):#登录接口限流”中间件，用来降低暴力破解风险
+class LoginRateLimitMiddleware(BaseHTTPMiddleware):  # 登录接口限流”中间件，用来降低暴力破解风险
     async def dispatch(self, request: Request, call_next):
         normalized_path = request.url.path.rstrip("/") or "/"
         request_signature = (normalized_path, request.method.upper())

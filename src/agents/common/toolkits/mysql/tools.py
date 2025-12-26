@@ -1,4 +1,4 @@
-﻿from typing import Annotated, Any
+from typing import Annotated, Any
 
 from langchain.tools import tool
 from pydantic import BaseModel, Field
@@ -310,4 +310,3 @@ def mysql_query(
 def get_mysql_tools() -> list[Any]:
     """获取MySQL工具列表"""
     return [mysql_list_tables, mysql_describe_table, mysql_query]
-
