@@ -31,19 +31,22 @@ class Token(BaseModel):
     avatar: str | None = None
     role: str
 
-#首次运行检查与初始化管理员
+
+# 首次运行检查与初始化管理员
 class UserCreate(BaseModel):
     username: str
     password: str
     role: str = "user"
     phone_number: str | None = None
 
+
 class UserRegister(BaseModel):
     username: str
     password: str
     phone_number: str | None = None
 
-#获取/修改个人信息（/me、/profile）
+
+# 获取/修改个人信息（/me、/profile）
 class UserUpdate(BaseModel):
     username: str | None = None
     password: str | None = None
