@@ -1,0 +1,6 @@
+﻿name = "SciToolKG 多工具智能体"
+description = "基于 SciToolKG 进行规划-执行-总结（Planner/Executor/Summarizer）的多工具智能体示例。"
+examples = [
+  "给定一个蛋白序列，先做信号肽预测，再做疏水性分析，然后总结结论。",
+  "给定一个 SMILES，做性质预测并给出下一步实验建议。",
+]

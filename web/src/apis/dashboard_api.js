@@ -1,4 +1,4 @@
-import { apiAdminGet } from './base'
+import { apiAdminGet, apiAdminPost } from './base'
 
 /**
  * Dashboard API模块
@@ -128,6 +128,13 @@ export const dashboardApi = {
    */
   getCallTimeseries: (type = 'models', timeRange = '14days') => {
     return apiAdminGet(`/api/dashboard/stats/calls/timeseries?type=${type}&time_range=${timeRange}`)
+  },
+
+  editImage: ({ image, prompt }) => {
+    const formData = new FormData()
+    formData.append('image', image)
+    formData.append('prompt', prompt)
+    return apiAdminPost('/api/dashboard/image/edit', formData, {}, 'blob')
   }
 }
 

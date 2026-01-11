@@ -1,12 +1,14 @@
 import traceback
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from src.storage.db.models import User
 from server.utils.auth_middleware import get_admin_user
 from src import graph_base, knowledge_base
 from src.knowledge.adapters.factory import GraphAdapterFactory
 from src.knowledge.adapters.base import GraphAdapter
+from src.knowledge.scitoolkg import get_scitoolkg_stats, is_scitoolkg_available, recommend_tool_path
 from src.utils.logging_config import logger
 
 graph = APIRouter(prefix="/graph", tags=["graph"])
@@ -33,6 +35,11 @@ async def _get_graph_adapter(db_id: str) -> GraphAdapter:
         if not rag_instance:
             raise HTTPException(status_code=404, detail=f"LightRAG database {db_id} not found or inaccessible")
         return GraphAdapterFactory.create_adapter("lightrag", lightrag_instance=rag_instance)
+
+    if db_id == "scitoolkg":
+        if not is_scitoolkg_available():
+            raise HTTPException(status_code=404, detail="SciToolKG graph_store.json not found")
+        return GraphAdapterFactory.create_adapter("scitoolkg")
 
     # 2. 默认为 Upload/Neo4j 数据库 (假设 db_id 为 "neo4j" 或其他 Neo4j 数据库名)
     # 这里我们假设非 LightRAG 的 ID 都是 Neo4j 的数据库名
@@ -84,6 +91,22 @@ async def get_graphs(current_user: User = Depends(get_admin_user)):
                     "metadata": db,
                 }
             )
+
+        scitoolkg_status = "active" if is_scitoolkg_available() else "missing"
+        scitoolkg_counts = (
+            get_scitoolkg_stats() if scitoolkg_status == "active" else {"total_nodes": 0, "total_edges": 0}
+        )
+        graphs.append(
+            {
+                "id": "scitoolkg",
+                "name": "SciToolKG 工具图谱",
+                "type": "scitoolkg",
+                "description": "Tools knowledge graph from SciToolAgent (graph_store.json)",
+                "status": scitoolkg_status,
+                "node_count": scitoolkg_counts.get("total_nodes", 0),
+                "edge_count": scitoolkg_counts.get("total_edges", 0),
+            }
+        )
 
         return {"success": True, "data": graphs}
 
@@ -163,6 +186,9 @@ async def get_graph_stats(
     获取图谱统计信息
     """
     try:
+        if db_id == "scitoolkg":
+            return {"success": True, "data": get_scitoolkg_stats()}
+
         if knowledge_base.is_lightrag_database(db_id):
             # 复用原有的 LightRAG 统计逻辑
             # 这里暂时直接调用原有逻辑，理想情况下也应该封装进 Adapter
@@ -213,6 +239,19 @@ async def get_graph_stats(
 # =============================================================================
 # === 兼容性接口 (Deprecated/Compatibility) ===
 # =============================================================================
+
+
+class SciToolKGPlanRequest(BaseModel):
+    question: str = Field(..., min_length=1)
+    top_k: int = Field(5, ge=1, le=10)
+
+
+@graph.post("/scitoolkg/plan")
+async def plan_scitoolkg_tool_path(payload: SciToolKGPlanRequest, current_user: User = Depends(get_admin_user)):
+    """Recommend a tool path based on SciToolKG only (no tool execution)."""
+    if not is_scitoolkg_available():
+        raise HTTPException(status_code=404, detail="SciToolKG graph_store.json not found")
+    return {"success": True, "data": recommend_tool_path(payload.question, top_k=payload.top_k)}
 
 
 @graph.get("/lightrag/subgraph")

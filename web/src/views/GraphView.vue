@@ -35,7 +35,7 @@
           type="primary"
           @click="state.showModal = true" ><UploadOutlined/> 上传文件</a-button>
         <a-button
-          v-else
+          v-else-if="!isSciToolKG"
           type="primary"
           @click="state.showUploadTipModal = true" ><UploadOutlined/> 上传文件</a-button>
         <a-button v-if="unindexedCount > 0" type="primary" @click="indexNodes" :loading="state.indexing">
@@ -80,6 +80,9 @@
               </a-input>
             </div>
             <div class="actions-right">
+              <a-button v-if="isSciToolKG" type="default" @click="openSciToolPlanModal" :icon="h(HighlightOutlined)">
+                SciToolAgent 规划
+              </a-button>
               <a-button type="default" @click="exportGraphData" :icon="h(ExportOutlined)">
                 导出数据
               </a-button>
@@ -199,10 +202,51 @@
           <li>查询逻辑基于 <code>graphbase.py</code> 中的 <code>get_sample_nodes</code> 方法实现。</li>
         </ul>
       </div>
+      <div class="info-content" v-else-if="isSciToolKG">
+        <p>本页面展示的是 SciToolAgent 的工具知识图谱（SciToolKG）。</p>
+        <p>支持通过节点名称或关键词进行搜索，输入 "*" 可查看采样全图。</p>
+        <p>页面右侧可基于 SciToolKG 推荐工具路径（不执行工具）。</p>
+      </div>
       <div class="info-content" v-else>
         <p>本页面展示的是 LightRAG 知识库生成的图谱信息。</p>
         <p>数据来源于选定的知识库实例。</p>
         <p>支持通过实体名称进行模糊搜索，输入 "*" 可查看采样全图。</p>
+      </div>
+    </a-modal>
+
+    <!-- SciToolKG: 工具路径推荐 -->
+    <a-modal
+      :open="state.showSciToolPlanModal"
+      title="SciToolKG 工具路径推荐（不执行工具）"
+      @cancel="() => state.showSciToolPlanModal = false"
+      :footer="null"
+      width="720px"
+    >
+      <div>
+        <a-textarea
+          v-model:value="state.sciToolPlanQuestion"
+          :rows="4"
+          placeholder="请输入问题，例如：What is the SMILES of ethanol?"
+          style="margin-bottom: 12px;"
+        />
+        <div style="display:flex; gap: 8px; align-items: center; margin-bottom: 12px;">
+          <a-button type="primary" :loading="state.sciToolPlanLoading" @click="runSciToolPlan">
+            生成推荐
+          </a-button>
+          <a-button type="default" @click="clearSciToolPlanResult" :disabled="state.sciToolPlanLoading">
+            清空
+          </a-button>
+        </div>
+
+        <div v-if="state.sciToolPlanResult">
+          <div style="margin-bottom: 8px; font-weight: 600;">工具路径</div>
+          <div style="display:flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;">
+            <a-tag v-for="t in state.sciToolPlanResult.tool_path" :key="t" color="blue">{{ t }}</a-tag>
+          </div>
+
+          <div style="margin-bottom: 8px; font-weight: 600;">建议说明</div>
+          <pre style="white-space: pre-wrap; word-break: break-word; margin: 0;">{{ state.sciToolPlanResult.final_answer }}</pre>
+        </div>
       </div>
     </a-modal>
   </div>
@@ -250,9 +294,14 @@ const state = reactive({
   selectedDbId: 'neo4j',
   dbOptions: [],
   lightragStats: null,
+  showSciToolPlanModal: false,
+  sciToolPlanQuestion: '',
+  sciToolPlanLoading: false,
+  sciToolPlanResult: null,
 })
 
 const isNeo4j = computed(() => state.selectedDbId === 'neo4j');
+const isSciToolKG = computed(() => state.selectedDbId === 'scitoolkg');
 
 // 计算未索引节点数量
 const unindexedCount = computed(() => {
@@ -289,6 +338,7 @@ const handleDbChange = () => {
   graph.clearGraph();
   state.searchInput = '';
   state.lightragStats = null;
+  state.showSciToolPlanModal = false;
 
   if (isNeo4j.value) {
     loadGraphInfo();
@@ -297,6 +347,41 @@ const handleDbChange = () => {
     loadLightRAGStats();
   }
   loadSampleNodes();
+};
+
+const openSciToolPlanModal = () => {
+  state.showSciToolPlanModal = true;
+  state.sciToolPlanResult = null;
+  if (!state.sciToolPlanQuestion) {
+    state.sciToolPlanQuestion = state.searchInput || '';
+  }
+};
+
+const clearSciToolPlanResult = () => {
+  state.sciToolPlanResult = null;
+  state.sciToolPlanQuestion = '';
+};
+
+const runSciToolPlan = async () => {
+  if (!state.sciToolPlanQuestion) {
+    message.error('请输入问题')
+    return
+  }
+
+  state.sciToolPlanLoading = true;
+  try {
+    const res = await unifiedApi.planSciToolKG({ question: state.sciToolPlanQuestion, top_k: 5 });
+    if (res.success) {
+      state.sciToolPlanResult = res.data;
+    } else {
+      message.error(res.message || '生成失败')
+    }
+  } catch (e) {
+    console.error(e);
+    message.error(e?.message || '生成失败')
+  } finally {
+    state.sciToolPlanLoading = false;
+  }
 };
 
 const loadLightRAGStats = () => {

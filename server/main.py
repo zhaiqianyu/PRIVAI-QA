@@ -16,28 +16,30 @@ from server.utils.access_log_middleware import AccessLogMiddleware
 
 # 设置日志配置
 setup_logging()
-#时间窗限流：60 秒内最多允许 10 次
+
 RATE_LIMIT_MAX_ATTEMPTS = 10
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_ENDPOINTS = {("/api/auth/token", "POST")}
 
-# In-memory login attempt tracker to reduce brute-force exposure per worker
+# deque[float] 存每次登录尝试的时间戳，超出 60 秒窗口的旧时间戳就用 popleft() 逐个移除。
 _login_attempts: defaultdict[str, deque[float]] = defaultdict(deque)
-_attempt_lock = asyncio.Lock()
+_attempt_lock = asyncio.Lock()#创建一个“异步锁”
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(lifespan=lifespan)#lifespan做资源初始化（连数据库、加载配置）和退出清理（关闭连接等）
 app.include_router(router, prefix="/api")
 
-# CORS 设置
+# CORS 设置，跨域资源共享”(Cross-Origin Resource Sharing) ，控制浏览器是否允许前端网页从一个域名/端口去请求另一个域名/端口上的后端接口。
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],#允许任意来源的网页发起跨域请
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],#允许任意 HTTP 方法
+    allow_headers=["*"],#允许任意请求头
+
+
 )
 
-
+#从请求里取客户端 IP
 def _extract_client_ip(request: Request) -> str:
     forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for:
@@ -47,7 +49,7 @@ def _extract_client_ip(request: Request) -> str:
     return "unknown"
 
 
-class LoginRateLimitMiddleware(BaseHTTPMiddleware):#登录接口限流”中间件，用来降低暴力破解风险
+class LoginRateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         normalized_path = request.url.path.rstrip("/") or "/"
         request_signature = (normalized_path, request.method.upper())

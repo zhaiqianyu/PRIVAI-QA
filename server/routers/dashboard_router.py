@@ -6,11 +6,15 @@ Provides centralized dashboard APIs for monitoring system-wide statistics.
 
 import traceback
 from datetime import datetime, timedelta
+import base64
+import os
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import String, cast, distinct, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+import httpx
 
 from server.routers.auth_router import get_admin_user
 from server.utils.auth_middleware import get_db
@@ -1035,3 +1039,61 @@ async def get_call_timeseries_stats(
         logger.error(f"Error getting call timeseries stats: {e}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Failed to get call timeseries stats: {str(e)}")
+
+
+@dashboard.post("/image/edit")
+async def edit_image(
+    prompt: str = Form(...),
+    image: UploadFile = File(...),
+    current_user: User = Depends(get_admin_user),
+):
+    api_key = os.getenv("DASHSCOPE_API_KEY", "")
+    endpoint = os.getenv(
+        "DASHSCOPE_IMAGE_EDIT_ENDPOINT",
+        "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+    )
+    model = os.getenv("DASHSCOPE_IMAGE_EDIT_MODEL", "qwen-image-edit-plus")
+
+    try:
+        image_bytes = await image.read()
+        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+        content_type = image.content_type or "image/png"
+        image_data_url = f"data:{content_type};base64,{image_b64}"
+
+        payload = {
+            "model": model,
+            "input": {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"image": image_data_url},
+                            {"text": prompt},
+                        ],
+                    }
+                ]
+            },
+            "parameters": {
+                "n": 1,
+                "watermark": False,
+                "prompt_extend": True,
+            },
+        }
+
+        async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
+            resp = await client.post(
+                endpoint,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json=payload,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+            image_url = data["output"]["choices"][0]["message"]["content"][0]["image"]
+            img_resp = await client.get(image_url)
+            img_resp.raise_for_status()
+            return Response(content=img_resp.content, media_type=img_resp.headers.get("content-type", "image/png"))
+    except Exception as e:
+        logger.error(f"Error editing image: {e}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Failed to edit image: {str(e)}")

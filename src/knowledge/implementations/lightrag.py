@@ -265,6 +265,16 @@ class LightRagKB(KnowledgeBase):
             if not hasattr(graph, "edges") or not graph.edges:
                 logger.info(f"No relations extracted for {file_id}, skipping Neo4j sync")
                 return
+
+            # LightRAG edges may reference nodes by internal Neo4j IDs; map them to entity names for display.
+            node_id_to_name: dict[str, str] = {}
+            if hasattr(graph, "nodes"):
+                for node in graph.nodes:
+                    raw_node_id = getattr(node, "id", None)
+                    props = getattr(node, "properties", {}) or {}
+                    entity_name = props.get("entity_id") or props.get("name") or raw_node_id
+                    if raw_node_id is not None and entity_name:
+                        node_id_to_name[str(raw_node_id)] = str(entity_name)
             
             # Convert to triples format compatible with txt_add_vector_entity
             # Format: {h: {name: ...}, t: {name: ...}, r: {type: ...}}
@@ -280,11 +290,14 @@ class LightRagKB(KnowledgeBase):
                 
                 source_id = getattr(edge, "source", "")
                 target_id = getattr(edge, "target", "")
+
+                source_name = node_id_to_name.get(str(source_id), str(source_id))
+                target_name = node_id_to_name.get(str(target_id), str(target_id))
                 
-                if source_id and target_id and rel_type:
+                if source_name and target_name and rel_type:
                     triples.append({
-                        "h": {"name": str(source_id), "source": f"lightrag:{db_id}"},
-                        "t": {"name": str(target_id), "source": f"lightrag:{db_id}"},
+                        "h": {"name": source_name, "source": f"lightrag:{db_id}"},
+                        "t": {"name": target_name, "source": f"lightrag:{db_id}"},
                         "r": {"type": str(rel_type), "file_id": file_id, "db_id": db_id}
                     })
             

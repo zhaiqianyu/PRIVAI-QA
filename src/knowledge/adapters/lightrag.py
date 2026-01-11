@@ -103,20 +103,7 @@ class LightRAGGraphAdapter(GraphAdapter):
         if not properties and hasattr(raw_edge, "get"):
             properties = raw_edge.get("properties", {})
 
-        # 优化边的显示类型
-        # LightRAG 的边类型通常是 "DIRECTED"，具体含义在 keywords 或 description 中
-        display_type = edge_type
-        if edge_type == "DIRECTED":
-            keywords = properties.get("keywords", [])
-            if keywords and isinstance(keywords, list) and len(keywords) > 0:
-                display_type = keywords[0]
-            elif properties.get("description"):
-                # 如果没有 keywords，尝试从 description 截取（太长就算了）
-                desc = properties.get("description", "")
-                if len(desc) < 20:
-                    display_type = desc
-                else:
-                    display_type = "related"  # fallback
+        display_type = self._get_edge_display_type(edge_type, properties)
 
         return self._create_standard_edge(
             edge_id=edge_id, source_id=source, target_id=target, edge_type=display_type, properties=properties
@@ -186,19 +173,41 @@ class LightRAGGraphAdapter(GraphAdapter):
         if not properties and hasattr(raw_edge, "get"):
             properties = raw_edge.get("properties", {})
 
-        # Optimize edge display type
-        display_type = edge_type
-        if edge_type == "DIRECTED":
-            keywords = properties.get("keywords", [])
-            if keywords and isinstance(keywords, list) and len(keywords) > 0:
-                display_type = keywords[0]
-            elif properties.get("description"):
-                desc = properties.get("description", "")
-                if len(desc) < 20:
-                    display_type = desc
-                else:
-                    display_type = "related"
+        display_type = self._get_edge_display_type(edge_type, properties)
 
         return self._create_standard_edge(
             edge_id=edge_id, source_id=source_name, target_id=target_name, edge_type=display_type, properties=properties
         )
+
+    def _get_edge_display_type(self, edge_type: Any, properties: dict[str, Any]) -> str:
+        # LightRAG 的边类型通常是 "DIRECTED"，具体含义在 properties 中（keywords/description等）
+        if edge_type != "DIRECTED":
+            return str(edge_type) if edge_type is not None else "related"
+
+        # 1) keywords[0]（兼容字符串 "投资,任命"）
+        keywords = properties.get("keywords", [])
+        if isinstance(keywords, str):
+            keywords = [k.strip() for k in keywords.split(",") if k.strip()]
+        if isinstance(keywords, list):
+            for k in keywords:
+                if isinstance(k, str) and k.strip():
+                    return k.strip()
+
+        # 2) 尝试其他可能的谓词字段
+        for key in ("relation", "predicate", "label", "name"):
+            val = properties.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip()[:20]
+
+        # 3) 从 description 抽取“短语”（取第一段、去掉标点、限制长度）
+        desc = properties.get("description")
+        if isinstance(desc, str) and desc.strip():
+            text = desc.strip()
+            for sep in ("\n", "。", "，", ",", "；", ";", "、", ":", "：", ".", "!", "！", "?", "？"):
+                if sep in text:
+                    text = text.split(sep, 1)[0].strip()
+            text = text.strip(" \t'\"“”‘’()（）[]【】")
+            if text:
+                return text[:20]
+
+        return "related"

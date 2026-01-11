@@ -64,5 +64,8 @@ ENV PATH="/app/.venv/bin:$PATH"
 COPY ../src /app/src
 COPY ../server /app/server
 
+RUN mkdir -p /app/SciToolAgent/KG/storage_graph_large
+COPY ../SciToolAgent/KG/storage_graph_large/graph_store.json /app/SciToolAgent/KG/storage_graph_large/graph_store.json
+
 
 

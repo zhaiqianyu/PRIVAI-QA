@@ -67,7 +67,7 @@ const router = createRouter({
         }
       ]
     },
-      {
+    {
       path: '/dashboard',
       name: 'dashboard',
       component: AppLayout,
@@ -76,6 +76,19 @@ const router = createRouter({
           path: '',
           name: 'DashboardComp',
           component: () => import('../views/DashboardView.vue'),
+          meta: { keepAlive: false, requiresAuth: true, requiresAdmin: true }
+        }
+      ]
+    },
+    {
+      path: '/image-edit',
+      name: 'imageEdit',
+      component: AppLayout,
+      children: [
+        {
+          path: '',
+          name: 'ImageEditComp',
+          component: () => import('../views/ImageEditView.vue'),
           meta: { keepAlive: false, requiresAuth: true, requiresAdmin: true }
         }
       ]

@@ -1,12 +1,17 @@
 from .base import GraphAdapter
 from .lightrag import LightRAGGraphAdapter
+from .scitoolkg import SciToolKGGraphAdapter
 from .upload import UploadGraphAdapter
 
 
 class GraphAdapterFactory:
     """图谱适配器工厂 (Graph Adapter Factory)"""
 
-    _registry: dict[str, type[GraphAdapter]] = {"upload": UploadGraphAdapter, "lightrag": LightRAGGraphAdapter}
+    _registry: dict[str, type[GraphAdapter]] = {
+        "upload": UploadGraphAdapter,
+        "lightrag": LightRAGGraphAdapter,
+        "scitoolkg": SciToolKGGraphAdapter,
+    }
 
     @classmethod
     def register(cls, graph_type: str, adapter_class: type[GraphAdapter]):

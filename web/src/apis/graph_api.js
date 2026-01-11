@@ -77,6 +77,20 @@ export const unifiedApi = {
     })
 
     return await apiGet(`/api/graph/labels?${queryParams.toString()}`, {}, true)
+  },
+
+  /**
+   * SciToolKG: 基于工具图谱推荐工具路径（不执行工具）
+   * @param {Object} params
+   * @param {string} params.question
+   * @param {number} params.top_k
+   */
+  planSciToolKG: async (params) => {
+    const { question, top_k = 5 } = params || {}
+    if (!question) {
+      throw new Error('question is required')
+    }
+    return await apiPost('/api/graph/scitoolkg/plan', { question, top_k }, true)
   }
 }
 

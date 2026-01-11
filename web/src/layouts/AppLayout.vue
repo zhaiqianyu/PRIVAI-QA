@@ -4,7 +4,7 @@ import { RouterLink, RouterView, useRoute } from 'vue-router'
 import {
   GithubOutlined,
 } from '@ant-design/icons-vue'
-import { Bot, Waypoints, LibraryBig, BarChart3, CircleCheck } from 'lucide-vue-next';
+import { Bot, Waypoints, LibraryBig, BarChart3, CircleCheck, Image } from 'lucide-vue-next';
 import { onLongPress } from '@vueuse/core'
 
 import { useConfigStore } from '@/stores/config'
@@ -118,6 +118,11 @@ const mainList = [{
     path: '/database',
     icon: LibraryBig,
     activeIcon: LibraryBig,
+  }, {
+    name: '修图',
+    path: '/image-edit',
+    icon: Image,
+    activeIcon: Image,
   }, {
     name: 'Dashboard',
     path: '/dashboard',
